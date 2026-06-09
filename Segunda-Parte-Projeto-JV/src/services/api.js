@@ -1,104 +1,164 @@
-const NASA_API_KEY = 'DEMO_KEY';
-const NASA_APOD_BASE_URL = 'https://api.nasa.gov/planetary/apod';
+const NASA_APOD_URL = 'https://api.nasa.gov/planetary/apod';
+const NASA_API_KEY = 'NlSkZm3TB6h3hMJa784BV6uhpzVW7O6e8aLJbtHd';
 
-export const fallbackMissions = [
+const DEFAULT_START_DATE = '2024-12-01';
+const DEFAULT_END_DATE = '2024-12-08';
+const REQUEST_TIMEOUT_MS = 30000;
+
+const fallbackMissions = [
   {
     id: 'fallback-1',
-    title: 'Projeto Kepler-186f',
+    title: 'Nebulosa de Órion',
     description:
-      'Missão dedicada à análise de um exoplaneta localizado na zona habitável de sua estrela, com foco em possíveis características atmosféricas compatíveis com estudos astrobiológicos.',
-    date: '2026-05-20',
-    image:
-      'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200',
-    source: 'Fallback local',
+      'Imagem demonstrativa usada quando a API da NASA não responde. A Nebulosa de Órion é uma das regiões de formação estelar mais conhecidas.',
+    date: '2026-01-10',
+    image: 'https://images-assets.nasa.gov/image/PIA01322/PIA01322~orig.jpg',
+    source: 'Dados locais',
     mediaType: 'image',
   },
   {
     id: 'fallback-2',
-    title: 'Europa Clipper Probe',
+    title: 'Galáxia de Andrômeda',
     description:
-      'Exploração científica da lua Europa, de Júpiter, com o objetivo de investigar sua crosta gelada e possíveis oceanos subterrâneos.',
-    date: '2024-10-14',
-    image:
-      'https://images.unsplash.com/photo-1614313913007-2b4ae8ce32d6?auto=format&fit=crop&q=80&w=1200',
-    source: 'Fallback local',
+      'Conteúdo local de reserva exibido para manter o aplicativo funcional mesmo quando a API pública atinge limite ou fica indisponível.',
+    date: '2026-01-11',
+    image: 'https://images-assets.nasa.gov/image/PIA04921/PIA04921~orig.jpg',
+    source: 'Dados locais',
     mediaType: 'image',
   },
   {
     id: 'fallback-3',
-    title: 'Observatório Lunar Artemis',
+    title: 'Planeta Marte',
     description:
-      'Projeto conceitual voltado ao monitoramento astronômico a partir da superfície lunar, com foco em observações de longa duração e baixa interferência atmosférica.',
-    date: '2027-01-12',
-    image:
-      'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?auto=format&fit=crop&q=80&w=1200',
-    source: 'Fallback local',
+      'Registro demonstrativo sobre Marte. Este item confirma que a lista continua carregando mesmo quando a API externa apresenta erro.',
+    date: '2026-01-12',
+    image: 'https://images-assets.nasa.gov/image/PIA04591/PIA04591~orig.jpg',
+    source: 'Dados locais',
     mediaType: 'image',
   },
 ];
 
-function buildApodUrl(count = 10) {
+function buildApodRangeUrl(startDate = DEFAULT_START_DATE, endDate = DEFAULT_END_DATE) {
   const params = new URLSearchParams({
     api_key: NASA_API_KEY,
-    count: String(count),
+    start_date: startDate,
+    end_date: endDate,
+    thumbs: 'true',
   });
 
-  return `${NASA_APOD_BASE_URL}?${params.toString()}`;
+  return `${NASA_APOD_URL}?${params.toString()}`;
+}
+
+function getImageFromApodItem(item) {
+  if (item?.media_type === 'image' && item?.url) {
+    return item.url;
+  }
+
+  if (item?.media_type === 'video' && item?.thumbnail_url) {
+    return item.thumbnail_url;
+  }
+
+  return 'https://images-assets.nasa.gov/image/PIA01322/PIA01322~orig.jpg';
 }
 
 function normalizeApodItem(item, index) {
   return {
-    id: `${item.date || 'nasa'}-${index}`,
-    title: item.title || 'Registro astronômico sem título',
-    description: item.explanation || 'Descrição indisponível para este registro astronômico.',
-    date: item.date || 'Data não informada',
-    image: item.url,
-    source: item.copyright ? `NASA / ${item.copyright}` : 'NASA APOD',
-    mediaType: item.media_type || 'image',
+    id: `${item?.date || 'nasa'}-${index}`,
+    title: item?.title || 'Registro astronômico sem título',
+    description:
+      item?.explanation ||
+      'A API retornou este item sem descrição detalhada disponível.',
+    date: item?.date || 'Data não informada',
+    image: getImageFromApodItem(item),
+    source: item?.copyright ? `NASA / ${item.copyright}` : 'NASA APOD',
+    mediaType: item?.media_type || 'image',
   };
 }
 
-export function formatApodData(items) {
-  if (!Array.isArray(items)) {
-    return [];
-  }
+async function fetchWithTimeout(url, timeout = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
 
-  return items
-    .filter((item) => item?.media_type === 'image' && item?.url)
-    .map((item, index) => normalizeApodItem(item, index));
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, timeout);
+
+  try {
+    return await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(
+        `Tempo limite de ${timeout / 1000}s excedido ao consultar a API da NASA.`
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
-export async function getSpaceMissions(count = 10) {
-  const response = await fetch(buildApodUrl(count));
+export async function getSpaceMissions() {
+  const url = buildApodRangeUrl();
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
-    throw new Error('Não foi possível carregar os dados da API da NASA.');
+    let errorMessage = `Erro HTTP ${response.status} ao consultar a API da NASA.`;
+
+    try {
+      const errorData = await response.json();
+
+      if (errorData?.msg) {
+        errorMessage = errorData.msg;
+      }
+
+      if (errorData?.error?.message) {
+        errorMessage = errorData.error.message;
+      }
+    } catch (error) {
+      // Mantém a mensagem padrão se a resposta de erro não for JSON.
+    }
+
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();
-  const formattedData = formatApodData(data);
+  const items = Array.isArray(data) ? data : [data];
 
-  if (formattedData.length === 0) {
-    throw new Error('A API retornou dados sem imagens disponíveis.');
+  const formattedItems = items
+    .map(normalizeApodItem)
+    .filter((item) => Boolean(item.image));
+
+  if (formattedItems.length === 0) {
+    throw new Error('A API da NASA respondeu, mas não retornou itens válidos para exibição.');
   }
 
-  return formattedData;
+  return formattedItems;
 }
 
-export async function getSpaceMissionsWithFallback(count = 10) {
+export async function getSpaceMissionsWithFallback() {
   try {
-    const missions = await getSpaceMissions(count);
+    const missions = await getSpaceMissions();
 
     return {
-      missions,
-      usingFallback: false,
-      error: null,
+      data: missions,
+      fromFallback: false,
+      error: '',
     };
   } catch (error) {
+    console.warn('Falha ao consultar a API da NASA. Usando dados locais:', error.message);
+
     return {
-      missions: fallbackMissions,
-      usingFallback: true,
-      error: error.message || 'Erro inesperado ao consultar a API pública.',
+      data: fallbackMissions,
+      fromFallback: true,
+      error: error.message,
     };
   }
 }
+
+export { fallbackMissions };
