@@ -11,52 +11,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const NASA_APOD_URL = 'https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY&count=10';
+import { getSpaceMissionsWithFallback } from '../services/api';
 
 function useSpaceApi() {
   const [missions, setMissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-
-  const fallbackMissions = [
-    {
-      id: 'fallback-1',
-      title: 'Projeto Kepler-186f',
-      description:
-        'Missão dedicada à análise de um exoplaneta localizado na zona habitável de sua estrela, com foco em possíveis características atmosféricas compatíveis com estudos astrobiológicos.',
-      date: '2026-05-20',
-      image:
-        'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200',
-      source: 'Fallback local',
-      mediaType: 'image',
-    },
-    {
-      id: 'fallback-2',
-      title: 'Europa Clipper Probe',
-      description:
-        'Exploração científica da lua Europa, de Júpiter, com o objetivo de investigar sua crosta gelada e possíveis oceanos subterrâneos.',
-      date: '2024-10-14',
-      image:
-        'https://images.unsplash.com/photo-1614313913007-2b4ae8ce32d6?auto=format&fit=crop&q=80&w=1200',
-      source: 'Fallback local',
-      mediaType: 'image',
-    },
-  ];
-
-  const formatApiData = useCallback((items) => {
-    return items
-      .filter((item) => item.media_type === 'image' && item.url)
-      .map((item, index) => ({
-        id: `${item.date}-${index}`,
-        title: item.title || 'Registro astronômico sem título',
-        description: item.explanation || 'Descrição indisponível para este registro.',
-        date: item.date || 'Data não informada',
-        image: item.url,
-        source: item.copyright ? `NASA / ${item.copyright}` : 'NASA APOD',
-        mediaType: item.media_type,
-      }));
-  }, []);
 
   const fetchMissions = useCallback(async (isRefresh = false) => {
     try {
@@ -68,28 +29,23 @@ function useSpaceApi() {
 
       setError('');
 
-      const response = await fetch(NASA_APOD_URL);
+      const result = await getSpaceMissionsWithFallback(10);
 
-      if (!response.ok) {
-        throw new Error('Não foi possível carregar os dados da API da NASA.');
+      setMissions(result.data);
+
+      if (result.fromFallback) {
+        setError(
+          `A API pública da NASA não respondeu corretamente. Exibindo dados locais. Detalhe: ${result.error}`
+        );
       }
-
-      const data = await response.json();
-      const formattedData = formatApiData(data);
-
-      if (formattedData.length === 0) {
-        throw new Error('A API retornou dados sem imagens disponíveis.');
-      }
-
-      setMissions(formattedData);
-    } catch (apiError) {
-      setError('A API pública não respondeu corretamente. Exibindo dados locais de segurança.');
-      setMissions(fallbackMissions);
+    } catch (unexpectedError) {
+      setError(`Erro inesperado ao carregar dados: ${unexpectedError.message}`);
+      setMissions([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [formatApiData]);
+  }, []);
 
   useEffect(() => {
     fetchMissions();
